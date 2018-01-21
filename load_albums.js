@@ -12,7 +12,28 @@ function load_album_list(callback) {
         return;
       }
 
-      callback(null, files);
+      let only_dirs = [];
+      (function iterator(index) {
+        if (index === files.length) {
+          callback(null, only_dirs);
+          return;
+        }
+
+        fs.stat(
+          `albums/${files[index]}`,
+          function (err, stats) {
+            if (err) {
+              callback(err);
+              return;
+            }
+
+            if (stats.isDirectory()) {
+              only_dirs.push(files[index]);
+            }
+            iterator(index + 1);
+          }
+        );
+      })(0);
     }
   );
 }
