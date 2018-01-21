@@ -1,13 +1,14 @@
 const http = require('http');
 const fs = require('fs');
+const url = require('url');
 
 const headers = { 'Content-Type': 'application/json' };
 
 function load_album_list(callback) {
   fs.readdir('albums', (err, files) => {
     if (err) {
-       callback(make_error('file_error',  JSON.stringify(err)));
-       return;
+      callback(make_error('file_error',  JSON.stringify(err)));
+      return;
     }
 
     let only_dirs = [];
@@ -28,13 +29,12 @@ function load_album_list(callback) {
            }
            iterator(index + 1)
        });
-
     }
     iterator(0);
   });
 }
 
-function load_album(album_name, callback) {
+function load_album(album_name, page, page_size, callback) {
   fs.readdir(`albums/${album_name}`, (err, files) => {
     if (err) {
       if (err.code === 'ENOENT') {
@@ -50,7 +50,8 @@ function load_album(album_name, callback) {
 
     const iterator = (index) => {
       if (index === files.length) {
-        const obj = { short_name: album_name, photos: only_files };
+        const ps = only_files.splice(page * page_size, page_size);
+        const obj = { short_name: album_name, photos: ps };
         callback(null, obj);
         return;
       }
@@ -72,10 +73,12 @@ function load_album(album_name, callback) {
 }
 
 function handle_incoming_request(req, res) {
-  console.log(`INCOMING REQUEST: ${req.method} ${req.url}`);
-  if (req.url === '/albums.json') {
+  req.parsed_url = url.parse(req.url, true);
+  const core_url = req.parsed_url.pathname;
+
+  if (core_url === '/albums.json') {
     handle_list_albums(req, res);
-  } else if (req.url.substr(0, 7) === '/albums' && req.url.substr(req.url.length - 5) === '.json') {
+  } else if (core_url.substr(0, 7) === '/albums' && core_url.substr(core_url.length - 5) === '.json') {
     handle_get_album(req, res);
   } else {
     send_failure(res, 404, invalid_resource());
@@ -94,8 +97,18 @@ function handle_list_albums(req, res) {
 }
 
 function handle_get_album(req, res) {
-  const album_name = req.url.substr(7, req.url.length - 12);
-  load_album(album_name, (err, album_contents) => {
+  const getp = req.parsed_url.query;
+  const page_num = getp.page || 0;
+  const page_size = getp.page_size || 1000;
+
+  if (isNaN(parseInt(page_num))) { page_num = 0; }
+  if (isNaN(parseInt(page_size))) { page_size = 0; }
+
+  const core_url = req.parsed_url.pathname;
+
+  const album_name = core_url.substr(7, core_url.length - 12);
+  console.log(album_name);
+  load_album(album_name, page_num, page_size, (err, album_contents) => {
     if (err && err.error === 'no_such_album') {
       send_failure(res, 404, err);
     }  else if (err) {
